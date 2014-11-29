@@ -1,0 +1,8 @@
+-Geoip
+https://github.com/maxmind/geoip-api-python
+http://thepiratebay.se/torrent/8521369/MaxMind.GeoIP.Organization.Database.May.2013
+http://dev.maxmind.com/geoip/geoip2/geolite2/
+https://github.com/nmmmnu/GeoIP-Redis
+
+Redis
+https://github.com/leporo/tornado-redis/tree/master/demos
