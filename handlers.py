@@ -4,7 +4,7 @@ from __future__ import division, print_function, unicode_literals
 import datetime
 import io
 from multiprocessing import cpu_count
-
+from tornado.util import ObjectDict
 import tornado.web
 from PIL import Image
 from tornado import gen
@@ -13,7 +13,7 @@ from tornado.web import Application, HTTPError, RequestHandler
 from tornado.websocket import WebSocketHandler
 
 import arrow
-import tornadoredis
+
 from concurrent.futures import ThreadPoolExecutor
 from db import P, T
 from logs import app_log
@@ -42,7 +42,7 @@ class BaseHandler(RequestHandler):
         dictionary['date'] = arrow.get(dictionary['date']).to('Europe/Kiev').humanize(locale='ua')
         dictionary['images'] = [
             self.reverse_url('files', url) for url in dictionary['images'].split("#")]
-        return dictionary
+        return ObjectDict(dictionary)
 
     def initialize(self, cache=None):
         self.cache = cache

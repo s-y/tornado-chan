@@ -1,4 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
 {{ text }}
+
+{% for post in posts  %}
+    {{ post.date }}
+{% end %}
+
+
 {% end %}
