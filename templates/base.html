@@ -1,2 +1,7 @@
-{% block title %}{% end %}
+{% if "title" in locals()  %}
+{{ title }}
+{% else %}
+Default title
+{% end %}
+
 {% block content %}{% end %}
