@@ -4,17 +4,19 @@
 from __future__ import division, print_function, unicode_literals
 
 from os import path
-from db import DataManager
-import tornadoredis
-from handlers import IndexHandler, ThreadHandler, WsHandler
-from logs import app_log
+
 from tornado.ioloop import IOLoop
 from tornado.web import Application, StaticFileHandler, url
+
+import tornadoredis
+from db import DataManager
+from handlers import IndexHandler, ThreadHandler, WsHandler
+from logs import app_log
 
 
 def make_app():
     base_dir = path.dirname(path.abspath(__file__))
-    debug = False
+    debug = True
     #redis = tornadoredis.ConnectionPool(max_connections=10, wait_for_available=True)
     redis = tornadoredis.Client()
     redis.connect()
@@ -23,11 +25,10 @@ def make_app():
     # cache.initialize()
     global_vars = dict(cache=cache)
 
-
     return Application([
         url(r"/", IndexHandler, name="index"),
-        url(r"/thread", ThreadHandler,global_vars,  name="thread"),
-        url(r"/ws", WsHandler, global_vars ,name="ws"),
+        url(r"/thread", ThreadHandler, global_vars,  name="thread"),
+        url(r"/ws", WsHandler, global_vars, name="ws"),
         url(r'/files/(.*)', StaticFileHandler,
             {'path': path.join(base_dir, "data")}, name="files"),
         # url(r"/(?P<param1>.*)", HelloHandler, global_vars, name='home'),

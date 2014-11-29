@@ -1,3 +1,4 @@
+# coding: utf-8
 from __future__ import division, print_function, unicode_literals
 
 import datetime
@@ -5,38 +6,51 @@ import io
 from multiprocessing import cpu_count
 
 import tornado.web
-
-from concurrent.futures import ThreadPoolExecutor
-from logs import app_log
 from PIL import Image
 from tornado import gen
 from tornado.concurrent import run_on_executor
 from tornado.web import Application, HTTPError, RequestHandler
 from tornado.websocket import WebSocketHandler
-Task = gen.Task
+
 import arrow
 import tornadoredis
+from concurrent.futures import ThreadPoolExecutor
+from db import P, T
+from logs import app_log
+
 
 def now():
     return datetime.datetime.now()
+last_cleanup = now()
 
-def readable_data(dictionary):
-    dictionary['date'] = arrow.get(dictionary['date']).to('Europe/Kiev').humanize(locale='ua')
-    return dictionary
+Task = gen.Task
+
+delta = datetime.timedelta(seconds=2)
+
+
+def build_key(topic_id, post_id):
+    return "t{}#p{}".format(topic_id, post_id)
+
+
+def build_topcic_key(topic_id):
+    return "t{}".format(topic_id)
+
 
 class BaseHandler(RequestHandler):
 
+    def readable_data(self, dictionary):
+        dictionary['date'] = arrow.get(dictionary['date']).to('Europe/Kiev').humanize(locale='ua')
+        dictionary['images'] = [
+            self.reverse_url('files', url) for url in dictionary['images'].split("#")]
+        return dictionary
+
     def initialize(self, cache=None):
-        self.cache=cache
+        self.cache = cache
 
     @property
     def redis(self):
         return self.application.settings['redis']
 
-
-
-
-from db import T, P
 
 class IndexHandler(BaseHandler):
 
@@ -46,6 +60,7 @@ class IndexHandler(BaseHandler):
 
 
 class WsHandler(WebSocketHandler):
+
     def open(self):
         pass
 
@@ -54,80 +69,115 @@ class WsHandler(WebSocketHandler):
 
     def on_close(self):
         pass
-last_cleanup = now()
-delta = datetime.timedelta(seconds=18)
+
 
 class ThreadHandler(BaseHandler):
     executor = ThreadPoolExecutor(max_workers=cpu_count())
-    def get_topic(self, t_id):
-        #import ipdb; ipdb.set_trace()
-        topic = self.cache.topics.get(t_id, False)
-        if topic:
-            return [self.get_post(x) for x in topic]
-        else:
-            app_log.warning("Not in cache topic: {}".format(t_id))
-        self.cache.topic_last_usage[t_id] = now()
 
-    def get_post(self, post_id):
+    @gen.coroutine
+    def get_topic(self, topic_id):
+        topic = self.cache.topics.get(topic_id, False)
+        self.cache.topic_last_usage[topic_id] = now()
+        if topic:
+            result = yield [self.get_post(x, topic_id) for x in set(topic)]
+            raise tornado.gen.Return(result)
+        else:
+            app_log.info("Not in cache topic: {}".format(topic_id))
+            key = build_topcic_key(topic_id)
+            exist = yield Task(self.redis.exists, key)
+            if exist:
+                result = []
+                for x in set(topic):
+                    x = yield self.get_post(int(x))
+                    result.append(x)
+                raise tornado.gen.Return(result)
+            else:
+                raise HTTPError(404)
+
+    @gen.coroutine
+    def get_post(self, post_id, topic_id):
+        post = self.cache.posts.get(post_id, None)
         self.cache.post_last_usage[post_id] = now()
-        return self.cache.posts.get(post_id, None)
+        if post:
+            raise tornado.gen.Return(post)
+        else:
+            app_log.info("Not in cache post: {}".format(post_id))
+            key = build_key(topic_id, post_id)
+            exist = yield Task(self.redis.exists, key)
+            if exist:
+                post = yield Task(self.redis.hgetall, key)
+                app_log.debug("Key exist")
+                raise tornado.gen.Return(post)
+            else:
+                raise tornado.gen.Return(None)
+
     def __init__(self, *args, **kwargs):
         super(ThreadHandler, self).__init__(*args, **kwargs)
 
-        if last_cleanup < (now()-delta):
-            self.save_to_redis()
+        if last_cleanup < (now() - delta):
+          #  self.save_to_redis()
             app_log.info('Not wait clean up')
-
-
-
 
     @gen.coroutine
     def get(self):
         post = {"date": now().isoformat(),
-                                              "post": "test",
-                                              "images": 'st#ff.p',
-                                              }
-        t_id = self.cache.add_topic(post)
+                "post": "test",
+                "images": 'st#ff.p',
+                }
+        topic_id = self.cache.add_topic(post)
         # yield Task(self.redis.incr, T)
-        # import ipdb; ipdb.set_trace()
-
 
         # redis db
         for x in range(100):
-            post_id = self.cache.add_post(t_id, post)
+            post = {"date": now().isoformat(),
+                    "post": "test",
+                    "images": 'st#ff.p',
+                    }
+            post_id = self.cache.add_post(topic_id, post)
       #      yield Task(self.redis.incr, P)
-      #       key = "t{}#p{}".format(t_id, post_id)
+      # key = "t{}#p{}".format(t_id, post_id)
       #      yield Task(self.redis.hmset, key, post)
 
         post = ''
-        key = "t{}#p{}".format(t_id, post_id)
-        app_log.debug("Key: {}".format(key))
+
+        app_log.debug("Key: {}".format(build_key(topic_id, post_id)))
         # exist = yield Task(self.redis.exists, key)
         # if exist:
         #     post = yield Task(self.redis.hgetall, key)
         #     app_log.debug("Key exist")
-        # app_log.debug(post)
-        # app_log.debug(self.get_topic(t_id))
-        self.render("thread.html", text="Hello from Thread", posts=self.get_topic(t_id))
+
+        # app_log.info("{}".format(self.get_topic(t_id)))
+        self.get_topic(topic_id - 1)
+        self.get_post(topic_id - 1)
+        # self.get_post(1)
+        posts = yield self.get_topic(topic_id)
+        posts = tuple(self.readable_data(post) for post in posts)
+        self.render(
+            "thread.html", text="Hello from Thread", posts=posts)
 
     @gen.coroutine
     def save_to_redis(self):
         global delta
         app_log.info('Start cleanup')
-        old = now()-delta
+        old = now() - delta
         for topic_id, date in self.cache.topic_last_usage.iteritems():
             if date < old:
+
                 for post_id in self.cache.topics[topic_id]:
                     post = self.cache.posts[post_id]
-                    key = "t{}#p{}".format(topic_id, post_id)
+                    key = build_key(topic_id, post_id)
                     yield Task(self.redis.hmset, key, post)
-                    del self.cache.posts[post_id]
-                yield Task(self.redis.sadd, "t{}".format(topic_id), *self.cache.topics[topic_id])
+                    app_log.debug(
+                        "Remove post {}".format(self.cache.posts[post_id]))
+                del self.cache.posts[post_id]
+
+                yield Task(self.redis.sadd, build_topcic_key(topic_id), *self.cache.topics[topic_id])
+                app_log.debug(
+                    "Remove topic {}".format(self.cache.topics[topic_id]))
                 del self.cache.topics[topic_id]
         global last_cleanup
         last_cleanup = now()
         raise gen.Return(None)
-
 
     @gen.coroutine
     def post(self):
