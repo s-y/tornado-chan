@@ -53,6 +53,10 @@ class DataManager(object):
         return self.pagination[start:end]
 
     def add_post(self, topic_id, post):
+        """
+
+        :rtype : int
+        """
         self.last_post_id += 1
         self.posts[self.last_post_id] = post
         if not(topic_id in self.topics):
@@ -65,5 +69,6 @@ class DataManager(object):
         self.last_topic_id += 1
         new_topic = []
         self.topics[self.last_topic_id] = new_topic
-        new_topic.append(self.add_post(self.last_topic_id, first_post))
-        return self.last_topic_id
+        post_id = self.add_post(self.last_topic_id, first_post)
+        new_topic.append(post_id)
+        return self.last_topic_id, post_id

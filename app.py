@@ -16,6 +16,7 @@ from logs import app_log
 
 def make_app():
     base_dir = path.dirname(path.abspath(__file__))
+    media_path = path.join(base_dir, "files")
     debug = True
     #redis = tornadoredis.ConnectionPool(max_connections=10, wait_for_available=True)
     redis = tornadoredis.Client()
@@ -26,18 +27,18 @@ def make_app():
     global_vars = dict(cache=cache)
 
     return Application([
-        url(r"/", IndexHandler, name="index"),
+        url(r"/", IndexHandler,global_vars, name="index"),
         url(r"/thread", ThreadHandler, global_vars,  name="thread"),
         url(r"/ws", WsHandler, global_vars, name="ws"),
         url(r'/files/(.*)', StaticFileHandler,
-            {'path': path.join(base_dir, "data")}, name="files"),
+            {'path': media_path}, name="files"),
         # url(r"/(?P<param1>.*)", HelloHandler, global_vars, name='home'),
     ],
         debug=debug,
         xsrf_cookies=False,
         template_path=path.join(base_dir, "templates"),
         static_path=path.join(base_dir, "static"),
-        media_path=path.join(base_dir, "data"),
+        media_path=media_path,
         cookie_secret='secret',
         redis=redis,
         cache=cache,
